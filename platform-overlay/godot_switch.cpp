@@ -129,6 +129,8 @@ int main(int argc, char *argv[]) {
 				TRACE("[BOOT] After Main::start (+%llu ms)", (unsigned long long)(nx::millis() - last_ms));
 #endif
 				os.run();
+				Main::cleanup();
+
 				exit_code = os.get_exit_code();
 			} else {
 				exit_code = EXIT_FAILURE;
@@ -136,7 +138,6 @@ int main(int argc, char *argv[]) {
 		}
 
 		free(setup_argv);
-		Main::cleanup();
 	}
 
 	romfsExit();

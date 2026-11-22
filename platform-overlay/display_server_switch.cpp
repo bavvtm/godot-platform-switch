@@ -465,6 +465,7 @@ DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, Displ
 		if (rendering_device->initialize(rendering_context, DisplayServerEnums::MAIN_WINDOW_ID) != OK) {
 			memdelete(rendering_device);
 			rendering_device = nullptr;
+			rendering_context->window_destroy(DisplayServerEnums::MAIN_WINDOW_ID);
 			memdelete(rendering_context);
 			rendering_context = nullptr;
 			r_error = ERR_UNAVAILABLE;

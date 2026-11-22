@@ -98,7 +98,13 @@ Error AudioDriverSwitch::_init_device() {
 	}
 
 	bool voice_ok = audrvVoiceInit(&drv, 0, channels, PcmFormat_Int16, SAMPLE_RATE);
-	ERR_FAIL_COND_V(!voice_ok, ERR_CANT_CREATE);
+	if (!voice_ok) {
+		free(mempool_ptr);
+		mempool_ptr = nullptr;
+		audrvClose(&drv);
+		audrenExit();
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "audrvVoiceInit failed");
+	}
 
 	audrvVoiceSetDestinationMix(&drv, 0, AUDREN_FINAL_MIX_ID);
 	if (channels == 1) {
@@ -205,9 +211,8 @@ void AudioDriverSwitch::_thread_func_audout(void *p_udata) {
 		AudioOutBuffer *released_buf = nullptr;
 		u32 released_count = 0;
 
-		Result res = audoutWaitPlayFinish(&released_buf, &released_count, UINT64_MAX);
+		Result res = audoutWaitPlayFinish(&released_buf, &released_count, 100000000ULL);
 		if (R_FAILED(res) || !released_buf) {
-			OS::get_singleton()->delay_usec(1000);
 			continue;
 		}
 

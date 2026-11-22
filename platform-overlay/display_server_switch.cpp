@@ -81,59 +81,57 @@ void DisplayServerSwitch::dispatch_window_event(DisplayServerEnums::WindowEvent 
 
 void DisplayServerSwitch::process_events() {
 	HidTouchScreenState state = {};
-	if (!hidGetTouchScreenStates(&state, 1)) {
-		return;
-	}
+	if (hidGetTouchScreenStates(&state, 1)) {
+		const float scale_x = (float)main_window.size.x / 1280.0f;
+		const float scale_y = (float)main_window.size.y / 720.0f;
+		bool current_active[nx::MAX_TOUCH_POINTS] = {};
 
-	const float scale_x = (float)main_window.size.x / 1280.0f;
-	const float scale_y = (float)main_window.size.y / 720.0f;
-	bool current_active[nx::MAX_TOUCH_POINTS] = {};
+		for (s32 i = 0; i < state.count; i++) {
+			const HidTouchState &t = state.touches[i];
+			if (t.finger_id >= nx::MAX_TOUCH_POINTS) {
+				continue;
+			}
 
-	for (s32 i = 0; i < state.count; i++) {
-		const HidTouchState &t = state.touches[i];
-		if (t.finger_id >= nx::MAX_TOUCH_POINTS) {
-			continue;
+			current_active[t.finger_id] = true;
+			Vector2 pos(t.x * scale_x, t.y * scale_y);
+			if (t.finger_id == 0) {
+				last_mouse_position = Point2i(pos.x, pos.y);
+			}
+
+			if (!touch_points[t.finger_id].active) {
+				touch_points[t.finger_id].active = true;
+				touch_points[t.finger_id].pos = pos;
+
+				Ref<InputEventScreenTouch> ev;
+				ev.instantiate();
+				ev->set_index(t.finger_id);
+				ev->set_position(pos);
+				ev->set_pressed(true);
+				Input::get_singleton()->parse_input_event(ev);
+			} else if (touch_points[t.finger_id].pos != pos) {
+				Vector2 rel = pos - touch_points[t.finger_id].pos;
+				touch_points[t.finger_id].pos = pos;
+
+				Ref<InputEventScreenDrag> ev;
+				ev.instantiate();
+				ev->set_index(t.finger_id);
+				ev->set_position(pos);
+				ev->set_relative(rel);
+				Input::get_singleton()->parse_input_event(ev);
+			}
 		}
 
-		current_active[t.finger_id] = true;
-		Vector2 pos(t.x * scale_x, t.y * scale_y);
-		if (t.finger_id == 0) {
-			last_mouse_position = Point2i(pos.x, pos.y);
-		}
+		for (u32 id = 0; id < nx::MAX_TOUCH_POINTS; id++) {
+			if (touch_points[id].active && !current_active[id]) {
+				touch_points[id].active = false;
 
-		if (!touch_points[t.finger_id].active) {
-			touch_points[t.finger_id].active = true;
-			touch_points[t.finger_id].pos = pos;
-
-			Ref<InputEventScreenTouch> ev;
-			ev.instantiate();
-			ev->set_index(t.finger_id);
-			ev->set_position(pos);
-			ev->set_pressed(true);
-			Input::get_singleton()->parse_input_event(ev);
-		} else if (touch_points[t.finger_id].pos != pos) {
-			Vector2 rel = pos - touch_points[t.finger_id].pos;
-			touch_points[t.finger_id].pos = pos;
-
-			Ref<InputEventScreenDrag> ev;
-			ev.instantiate();
-			ev->set_index(t.finger_id);
-			ev->set_position(pos);
-			ev->set_relative(rel);
-			Input::get_singleton()->parse_input_event(ev);
-		}
-	}
-
-	for (u32 id = 0; id < nx::MAX_TOUCH_POINTS; id++) {
-		if (touch_points[id].active && !current_active[id]) {
-			touch_points[id].active = false;
-
-			Ref<InputEventScreenTouch> ev;
-			ev.instantiate();
-			ev->set_index(id);
-			ev->set_position(touch_points[id].pos);
-			ev->set_pressed(false);
-			Input::get_singleton()->parse_input_event(ev);
+				Ref<InputEventScreenTouch> ev;
+				ev.instantiate();
+				ev->set_index(id);
+				ev->set_position(touch_points[id].pos);
+				ev->set_pressed(false);
+				Input::get_singleton()->parse_input_event(ev);
+			}
 		}
 	}
 

@@ -128,14 +128,14 @@ void JoypadSwitch::reset_pad_state() {
 				input->joy_axis(index, JoyAxis::TRIGGER_RIGHT, 0.0f);
 			}
 
-			// centered analog
-			input->joy_axis(index, JoyAxis::LEFT_X, 0.0f);
-			input->joy_axis(index, JoyAxis::LEFT_Y, 0.0f);
-			input->joy_axis(index, JoyAxis::RIGHT_X, 0.0f);
-			input->joy_axis(index, JoyAxis::RIGHT_Y, 0.0f);
-
 			prev_buttons[index] = 0;
 		}
+
+		// centered analog
+		input->joy_axis(index, JoyAxis::LEFT_X, 0.0f);
+		input->joy_axis(index, JoyAxis::LEFT_Y, 0.0f);
+		input->joy_axis(index, JoyAxis::RIGHT_X, 0.0f);
+		input->joy_axis(index, JoyAxis::RIGHT_Y, 0.0f);
 	}
 }
 

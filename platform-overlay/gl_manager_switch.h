@@ -39,6 +39,8 @@ private:
 	static const char *egl_error_to_string(EGLint p_error);
 	static void check_egl_error(const char *p_step);
 
+	Error _create_window_surface(GLWindow &p_win);
+
 public:
 	Error initialize();
 

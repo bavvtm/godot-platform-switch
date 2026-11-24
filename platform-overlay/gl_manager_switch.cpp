@@ -107,6 +107,27 @@ Error GLManager_Switch::initialize() {
 	return OK;
 }
 
+Error GLManager_Switch::_create_window_surface(GLWindow &p_win) {
+	nwindowSetDimensions(p_win.nwindow, (u32)p_win.size.x, (u32)p_win.size.y);
+
+	p_win.egl_surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)p_win.nwindow, nullptr);
+	if (p_win.egl_surface == EGL_NO_SURFACE) {
+		check_egl_error("eglCreateWindowSurface");
+		TRACE("Switch EGL: Failed to create window surface.");
+		return ERR_CANT_CREATE;
+	}
+
+	if (!eglMakeCurrent(display, p_win.egl_surface, p_win.egl_surface, context)) {
+		check_egl_error("eglMakeCurrent");
+		TRACE("Switch EGL: Failed to bind context to surface.");
+		eglDestroySurface(display, p_win.egl_surface);
+		p_win.egl_surface = EGL_NO_SURFACE;
+		return ERR_CANT_CREATE;
+	}
+
+	return OK;
+}
+
 Error GLManager_Switch::window_create(DisplayServerEnums::WindowID p_window_id, NWindow *p_native_window, const Point2i &p_size) {
 	if (windows.has(p_window_id)) {
 		TRACE("Window ID %d already registered.", (int)p_window_id);
@@ -123,20 +144,9 @@ Error GLManager_Switch::window_create(DisplayServerEnums::WindowID p_window_id, 
 	win.nwindow = p_native_window;
 	win.size = p_size;
 
-	nwindowSetDimensions(win.nwindow, (u32)win.size.x, (u32)win.size.y);
-
-	win.egl_surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)win.nwindow, nullptr);
-	if (win.egl_surface == EGL_NO_SURFACE) {
-		check_egl_error("eglCreateWindowSurface");
-		TRACE("Switch EGL: Failed to create window surface.");
-		return ERR_CANT_CREATE;
-	}
-
-	if (!eglMakeCurrent(display, win.egl_surface, win.egl_surface, context)) {
-		check_egl_error("eglMakeCurrent");
-		TRACE("Switch EGL: Failed to bind context to surface.");
-		eglDestroySurface(display, win.egl_surface);
-		return ERR_CANT_CREATE;
+	Error err = _create_window_surface(win);
+	if (err != OK) {
+		return err;
 	}
 
 	// switch uses native OpenGL ES 3.2 via EGL (instead of desktop OpenGL),
@@ -168,8 +178,18 @@ void GLManager_Switch::window_resize(DisplayServerEnums::WindowID p_window_id, c
 	}
 
 	win.size = p_size;
-	if (win.nwindow) {
-		nwindowSetDimensions(win.nwindow, (u32)win.size.x, (u32)win.size.y);
+
+	if (win.nwindow && display != EGL_NO_DISPLAY) {
+		eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+		if (win.egl_surface != EGL_NO_SURFACE) {
+			eglDestroySurface(display, win.egl_surface);
+			win.egl_surface = EGL_NO_SURFACE;
+		}
+
+		if (_create_window_surface(win) == OK) {
+			int interval = (vsync_mode == DisplayServerEnums::VSYNC_DISABLED) ? 0 : 1;
+			eglSwapInterval(display, interval);
+		}
 	}
 }
 

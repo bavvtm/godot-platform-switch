@@ -351,13 +351,21 @@ void DisplayServerSwitch::window_set_size(const Size2i p_size, DisplayServerEnum
 
 	main_window.size = p_size;
 
-	if (main_window.nx_window) {
-		nwindowSetDimensions(main_window.nx_window, p_size.x, p_size.y);
-	}
-
 #ifdef RD_ENABLED
-	if (rendering_context) {
-		rendering_context->window_set_size(DisplayServerEnums::MAIN_WINDOW_ID, p_size.x, p_size.y);
+	if (rendering_context && rendering_device) {
+		rendering_device->screen_free(DisplayServerEnums::MAIN_WINDOW_ID);
+		rendering_context->window_destroy(DisplayServerEnums::MAIN_WINDOW_ID);
+
+		if (main_window.nx_window) {
+			nwindowSetDimensions(main_window.nx_window, p_size.x, p_size.y);
+		}
+
+#ifdef VULKAN_ENABLED
+		RenderingContextDriverVulkanSwitch::WindowPlatformData wpd;
+		wpd.window = main_window.nx_window;
+		rendering_context->window_create(DisplayServerEnums::MAIN_WINDOW_ID, &wpd);
+#endif
+		rendering_device->screen_create(DisplayServerEnums::MAIN_WINDOW_ID);
 	}
 #endif
 

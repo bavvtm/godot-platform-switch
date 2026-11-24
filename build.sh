@@ -7,7 +7,6 @@ source "${ROOT_DIR}/config"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
 GODOT_OVERLAY_DIR="${GODOT_OVERLAY_DIR:-${ROOT_DIR}/platform-overlay}"
 GODOT_SOURCE="${GODOT_SOURCE:-${BUILD_DIR}/godot}"
-GODOT_TARGET="${GODOT_TARGET:-template_debug}"
 MESA_OVERLAY_DIR="${MESA_OVERLAY_DIR:-${ROOT_DIR}/mesa}"
 MESA_SOURCE="${MESA_SOURCE:-${BUILD_DIR}/mesa}"
 MESA_BUILD_TYPE="${MESA_BUILD_TYPE:-debug}"
@@ -58,17 +57,18 @@ function clone_godot() {
 }
 
 function build_godot() {
-  local obj_dir="${GODOT_SOURCE}/build/obj"
+	local target=$1
+  local obj_dir="${GODOT_SOURCE}/build/obj_${target}"
   local mesa_sdk="${MESA_SOURCE}/mesa-unified-install/opt/devkitpro/portlibs/switch"
   local debug_symbols="yes"
 
-  if [[ "${GODOT_TARGET}" == "template_release" ]]; then
+  if [[ "${target}" == "release" ]]; then
     debug_symbols="no"
   fi
 
   python3 -m SCons -C "${GODOT_SOURCE}" \
     platform=switch \
-    target="${GODOT_TARGET}" \
+    target="template_${target}" \
     arch=arm64 \
     vulkan=yes \
     opengl3=yes \
@@ -80,13 +80,13 @@ function build_godot() {
     -j"${JOBS}" || return 1
 
   aarch64-none-elf-strip --strip-all \
-    "${GODOT_SOURCE}/bin/godot.switch.${GODOT_TARGET}.arm64" || return 1
+    "${GODOT_SOURCE}/bin/godot.switch.template_${target}.arm64" || return 1
 
-  cp -f "${GODOT_SOURCE}/bin/godot.switch.${GODOT_TARGET}.arm64" \
-    "${BUILD_DIR}/${GODOT_TARGET}"
+	cp -f "${GODOT_SOURCE}/bin/godot.switch.template_${target}.arm64" \
+    "${BUILD_DIR}/${target}"
 
-  cp -f "${GODOT_SOURCE}/bin/godot.switch.${GODOT_TARGET}.arm64.nro" \
-    "${BUILD_DIR}/Godot_${GODOT_REF}_switch.nro"
+  cp -f "${GODOT_SOURCE}/bin/godot.switch.template_${target}.arm64.nro" \
+    "${BUILD_DIR}/Godot_${GODOT_REF}_switch.${target}.nro"
 
   return 0
 }
@@ -136,8 +136,13 @@ function make_zip() {
   cp -f "${GODOT_OVERLAY_DIR}/romfs/applet_splash.rgba.z" \
     "${ADDON_OUT_DIR}/romfs/applet_splash.rgba.z"
 
-  cp -f "${BUILD_DIR}/${GODOT_TARGET}" \
-    "${ADDON_OUT_DIR}/${GODOT_TARGET}"
+  if [ -f "${BUILD_DIR}/debug" ]; then
+    mv -f "${BUILD_DIR}/debug" "${ADDON_OUT_DIR}/templates/debug"
+  fi
+
+  if [ -f "${BUILD_DIR}/release" ]; then
+    mv -f "${BUILD_DIR}/release" "${ADDON_OUT_DIR}/templates/release"
+  fi
 
   if [ ! -f "${ADDON_OUT_DIR}/libswitch_exporter.linux.template_release.x86_64.so" ] && \
      [ ! -f "${ADDON_OUT_DIR}/libswitch_exporter.windows.template_release.x86_64.dll" ]; then
@@ -154,6 +159,15 @@ function make_zip() {
   return 0
 }
 
+TARGET_MODE="${2:-both}"
+if [[ "${TARGET_MODE}" == "debug" ]]; then
+  GODOT_TARGETS=("debug")
+elif [[ "${TARGET_MODE}" == "release" ]]; then
+  GODOT_TARGETS=("release")
+else
+  GODOT_TARGETS=("debug" "release")
+fi
+
 mkdir -p "${BUILD_DIR}"
 
 case "${1:-all}" in
@@ -166,7 +180,9 @@ case "${1:-all}" in
     ;;
   godot)
     clone_godot || exit 1
-    build_godot || exit 1
+    for t in "${GODOT_TARGETS[@]}"; do
+      build_godot "$t" || exit 1
+    done
     ;;
   exporter)
     clone_godot_cpp || exit 1
@@ -177,7 +193,9 @@ case "${1:-all}" in
     clone_godot || exit 1
     clone_godot_cpp || exit 1
     build_mesa || exit 1
-    build_godot || exit 1
+    for t in "${GODOT_TARGETS[@]}"; do
+      build_godot "$t" || exit 1
+    done
     build_exporter || exit 1
     make_zip || exit 1
     ;;

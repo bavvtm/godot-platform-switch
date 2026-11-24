@@ -1,27 +1,20 @@
 {
-	"enabled_classes": [
-		"Object",
-		"RefCounted",
-		"Resource",
-		"OS",
-		"Time",
-		"ProjectSettings",
-		"DirAccess",
-		"FileAccess",
-		"Mutex",
-		"Thread",
-		"PacketPeer",
-		"PacketPeerUDP",
-		"PCKPacker",
+  "type": "feature_profile",
+  "enabled_classes": [
+    "ProjectSettings",
+    "DirAccess",
+    "FileAccess",
+    "OS",
+    "PCKPacker",
 
-		"Texture",
-		"Texture2D",
-		"Image",
-		"ImageTexture",
+    "Image",
+    "ImageTexture",
+    "Texture2D",
 
-		"EditorPlugin",
-		"EditorExportPlatform",
-		"EditorExportPlatformExtension",
-		"EditorExportPreset"
-	]
+    "EditorPlugin",
+    "EditorPluginRegistration",
+    "EditorExportPlatform",
+    "EditorExportPlatformExtension",
+    "EditorExportPreset"
+  ]
 }

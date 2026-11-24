@@ -19,6 +19,8 @@
 *.gen.h
 template_release
 template_debug
+release
+debug
 log.txt
 gl_selftest
 __pycache__/

@@ -11,9 +11,6 @@ export PATH="$HOME/.local/bin:$DEVKITA64/bin:$DEVKITPRO/portlibs/switch/bin:$PAT
 GODOT_REPO="https://github.com/godotengine/godot.git"
 GODOT_REF="4.7.2-stable"
 
-# Godot target build (default: template_debug)
-GODOT_TARGET="template_release"
-
 # Godot cpp source
 GODOT_CPP_REPO="https://github.com/godotengine/godot-cpp.git"
 GODOT_CPP_REF="10.0.0-stable"

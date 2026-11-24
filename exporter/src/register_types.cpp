@@ -1,6 +1,5 @@
 #include "register_types.h"
 #include "editor_export_platform_switch.h"
-#include "device_discovery_switch.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/classes/editor_plugin.hpp>
@@ -10,19 +9,21 @@
 
 using namespace godot;
 
-class SwitchExporterEditorPlugin : public EditorPlugin {
-	GDCLASS(SwitchExporterEditorPlugin, EditorPlugin);
+class EditorPluginSwitch : public EditorPlugin {
+	GDCLASS(EditorPluginSwitch, EditorPlugin);
 
 private:
-	Ref<EditorExportPlatformSwitch> export_platform;
+	Ref<EditorExportPlatformSwitch> export_platform; // ganti dari pointer mentah
 
 protected:
 	static void _bind_methods() {}
 
 public:
 	void _enter_tree() override {
-		export_platform.instantiate();
-		add_export_platform(export_platform);
+		if (export_platform.is_null()) {
+			export_platform.instantiate();
+			add_export_platform(export_platform);
+		}
 	}
 
 	void _exit_tree() override {
@@ -38,11 +39,10 @@ void initialize_switch_exporter_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
+	GDREGISTER_INTERNAL_CLASS(EditorPluginSwitch);
 	GDREGISTER_INTERNAL_CLASS(EditorExportPlatformSwitch);
-	GDREGISTER_INTERNAL_CLASS(DeviceDiscoverySwitch);
-	GDREGISTER_INTERNAL_CLASS(SwitchExporterEditorPlugin);
 
-	EditorPlugins::add_by_type<SwitchExporterEditorPlugin>();
+	EditorPlugins::add_by_type<EditorPluginSwitch>();
 }
 
 void uninitialize_switch_exporter_module(ModuleInitializationLevel p_level) {
@@ -50,7 +50,7 @@ void uninitialize_switch_exporter_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	EditorPlugins::remove_by_type<SwitchExporterEditorPlugin>();
+	EditorPlugins::remove_by_type<EditorPluginSwitch>();
 }
 
 extern "C" {

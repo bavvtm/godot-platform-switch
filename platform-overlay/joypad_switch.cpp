@@ -29,6 +29,48 @@ void JoypadSwitch::_init_pad() {
 	button_map[HidNpadButton_Right] = JoyButton::DPAD_RIGHT;
 }
 
+void JoypadSwitch::_init_vibration(int p_index) {
+	u32 pad_id = padIsHandheld(&pads[p_index]) ? HidNpadIdType_Handheld : (HidNpadIdType_No1 + p_index);
+	u32 pad_style = padGetStyleSet(&pads[p_index]);
+
+	if (active_pad_id[p_index] == pad_id && active_pad_style[p_index] == pad_style && vibration_handle_count[p_index] > 0) {
+		return;
+	}
+
+	_stop_vibration(p_index);
+
+	active_pad_id[p_index] = pad_id;
+	active_pad_style[p_index] = pad_style;
+
+	Result rc = hidInitializeVibrationDevices(vibration_handles[p_index], 2, (HidNpadIdType)pad_id, (HidNpadStyleTag)pad_style);
+	vibration_handle_count[p_index] = R_SUCCEEDED(rc) ? 2 : 0;
+}
+
+void JoypadSwitch::_stop_vibration(int p_index) {
+	if (is_vibrating[p_index]) {
+		_send_vibration(p_index, 0.0f, 0.0f);
+	}
+
+	is_vibrating[p_index] = false;
+	last_vibration_timestamp[p_index] = 0;
+}
+
+void JoypadSwitch::_send_vibration(int p_index, float p_low, float p_high) {
+	if (vibration_handle_count[p_index] <= 0) {
+		return;
+	}
+
+	HidVibrationValue vals[2] = {};
+	for (int i = 0; i < vibration_handle_count[p_index]; i++) {
+		vals[i].amp_low = CLAMP(p_low, 0.0f, 1.0f);
+		vals[i].freq_low = 160.0f; // 160hz
+		vals[i].amp_high = CLAMP(p_high, 0.0f, 1.0f);
+		vals[i].freq_high = 320.0f; // 320hz
+	}
+
+	hidSendVibrationValues(vibration_handles[p_index], vals, vibration_handle_count[p_index]);
+}
+
 Error JoypadSwitch::initialize() {
 	input = Input::get_singleton();
 	ERR_FAIL_NULL_V(input, ERR_UNCONFIGURED);
@@ -67,8 +109,18 @@ void JoypadSwitch::process_pad() {
 		}
 
 		if (!is_connected) {
+			if (vibration_handle_count[index] > 0) {
+				_stop_vibration(index);
+				vibration_handle_count[index] = 0;
+				active_pad_id[index] = 0;
+				active_pad_style[index] = 0;
+			}
+
 			continue;
 		}
+
+		// vibration
+		_init_vibration(index);
 
 		// analog sticks
 		HidAnalogStickState l_stick = padGetStickPos(&pads[index], 0);
@@ -139,6 +191,45 @@ void JoypadSwitch::reset_pad_state() {
 	}
 }
 
+void JoypadSwitch::process_vibration() {
+	if (!input) {
+		return;
+	}
+
+	for (int index = 0; index < JOYPADS_MAX; index++) {
+		if (!connected[index] || vibration_handle_count[index] <= 0) {
+			continue;
+		}
+
+		Vector2 strength = input->get_joy_vibration_strength(index);
+		if (strength.x <= 0.0f && strength.y <= 0.0f) {
+			if (is_vibrating[index]) {
+				_stop_vibration(index);
+			}
+
+			continue;
+		}
+
+		uint64_t timestamp = input->get_joy_vibration_timestamp(index);
+		if (timestamp != last_vibration_timestamp[index] || !is_vibrating[index]) {
+			last_vibration_timestamp[index] = timestamp;
+			is_vibrating[index] = true;
+
+			_send_vibration(index, strength.y, strength.x);
+		}
+	}
+}
+
+void JoypadSwitch::reset_vibration() {
+	if (!input) {
+		return;
+	}
+
+	for (int index = 0; index < JOYPADS_MAX; index++) {
+		_stop_vibration(index);
+	}
+}
+
 JoypadSwitch::JoypadSwitch() {
 	// Does nothing.
 }
@@ -149,6 +240,8 @@ JoypadSwitch::~JoypadSwitch() {
 	}
 
 	for (int i = 0; i < JOYPADS_MAX; i++) {
+		_stop_vibration(i);
+
 		if (connected[i]) {
 			input->joy_connection_changed(i, false, "");
 			connected[i] = false;

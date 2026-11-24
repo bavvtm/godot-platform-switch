@@ -171,8 +171,10 @@ void OS_Switch::run() {
 		if (joypad_switch) {
 			if (in_focus) {
 				joypad_switch->process_pad();
+				joypad_switch->process_vibration();
 			} else {
 				joypad_switch->reset_pad_state();
+				joypad_switch->reset_vibration();
 			}
 		}
 

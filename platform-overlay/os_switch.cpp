@@ -172,9 +172,11 @@ void OS_Switch::run() {
 			if (in_focus) {
 				joypad_switch->process_pad();
 				joypad_switch->process_vibration();
+				joypad_switch->process_sixaxis();
 			} else {
 				joypad_switch->reset_pad_state();
 				joypad_switch->reset_vibration();
+				joypad_switch->reset_sixaxis();
 			}
 		}
 

@@ -413,7 +413,7 @@ static void _do_inline_appear(const SwkbdAppearArg &p_arg) {
 		swkbdInlineSetInputText(&s_kbd_inline, s_kbd_pending_text);
 		swkbdInlineSetCursorPos(&s_kbd_inline, (s32)strlen(s_kbd_pending_text));
 	}
-	
+
 	swkbdInlineUpdate(&s_kbd_inline, nullptr);
 	s_kbd_inline_visible = true;
 #else

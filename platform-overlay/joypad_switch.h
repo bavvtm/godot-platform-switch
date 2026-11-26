@@ -23,6 +23,11 @@ private:
 	uint64_t last_vibration_timestamp[JOYPADS_MAX] = {};
 	bool is_vibrating[JOYPADS_MAX] = {};
 
+	HidSixAxisSensorHandle sixaxis_handles[JOYPADS_MAX][2] = {};
+	int sixaxis_handle_count[JOYPADS_MAX] = {};
+	u32 sixaxis_pad_id[JOYPADS_MAX] = {};
+	u32 sixaxis_pad_style[JOYPADS_MAX] = {};
+
 	Input *input = nullptr;
 
 	void _init_pad();
@@ -31,6 +36,9 @@ private:
 	void _stop_vibration(int p_index);
 	void _send_vibration(int p_index, float p_low, float p_high);
 
+	void _init_sixaxis(int p_index);
+	void _stop_sixaxis(int p_index);
+
 public:
 	Error initialize();
 	void process_pad();
@@ -38,6 +46,9 @@ public:
 
 	void process_vibration();
 	void reset_vibration();
+
+	void process_sixaxis();
+	void reset_sixaxis();
 
 	JoypadSwitch();
 	~JoypadSwitch();

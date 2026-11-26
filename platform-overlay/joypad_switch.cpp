@@ -1,5 +1,7 @@
 #include "joypad_switch.h"
 
+#include "core/math/math_defs.h"
+
 static constexpr u64 pad_ids[JOYPADS_MAX] = {
 	(1ull << HidNpadIdType_No1) | (1ull << HidNpadIdType_Handheld),
 	(1ull << HidNpadIdType_No2),
@@ -71,6 +73,41 @@ void JoypadSwitch::_send_vibration(int p_index, float p_low, float p_high) {
 	hidSendVibrationValues(vibration_handles[p_index], vals, vibration_handle_count[p_index]);
 }
 
+void JoypadSwitch::_init_sixaxis(int p_index) {
+	u32 pad_id = padIsHandheld(&pads[p_index]) ? HidNpadIdType_Handheld : (HidNpadIdType_No1 + p_index);
+	u32 pad_style = padGetStyleSet(&pads[p_index]);
+
+	if (sixaxis_pad_id[p_index] == pad_id && sixaxis_pad_style[p_index] == pad_style && sixaxis_handle_count[p_index] > 0) {
+		return;
+	}
+
+	_stop_sixaxis(p_index);
+
+	sixaxis_pad_id[p_index] = pad_id;
+	sixaxis_pad_style[p_index] = pad_style;
+
+	int expected_count = (pad_style & HidNpadStyleTag_NpadJoyDual) ? 2 : 1;
+	Result rc = hidGetSixAxisSensorHandles(sixaxis_handles[p_index], expected_count, (HidNpadIdType)pad_id, (HidNpadStyleTag)pad_style);
+	if (R_SUCCEEDED(rc)) {
+		sixaxis_handle_count[p_index] = expected_count;
+		for (int i = 0; i < expected_count; i++) {
+			hidStartSixAxisSensor(sixaxis_handles[p_index][i]);
+		}
+	} else {
+		sixaxis_handle_count[p_index] = 0;
+	}
+}
+
+void JoypadSwitch::_stop_sixaxis(int p_index) {
+	for (int i = 0; i < sixaxis_handle_count[p_index]; i++) {
+		hidStopSixAxisSensor(sixaxis_handles[p_index][i]);
+	}
+
+	sixaxis_handle_count[p_index] = 0;
+	sixaxis_pad_id[p_index] = 0;
+	sixaxis_pad_style[p_index] = 0;
+}
+
 Error JoypadSwitch::initialize() {
 	input = Input::get_singleton();
 	ERR_FAIL_NULL_V(input, ERR_UNCONFIGURED);
@@ -116,11 +153,18 @@ void JoypadSwitch::process_pad() {
 				active_pad_style[index] = 0;
 			}
 
+			if (sixaxis_handle_count[index] > 0) {
+				_stop_sixaxis(index);
+			}
+
 			continue;
 		}
 
 		// vibration
 		_init_vibration(index);
+
+		// sixaxis
+		_init_sixaxis(index);
 
 		// analog sticks
 		HidAnalogStickState l_stick = padGetStickPos(&pads[index], 0);
@@ -230,6 +274,51 @@ void JoypadSwitch::reset_vibration() {
 	}
 }
 
+void JoypadSwitch::process_sixaxis() {
+	if (!input) {
+		return;
+	}
+
+	for (int index = 0; index < JOYPADS_MAX; index++) {
+		if (!connected[index] || sixaxis_handle_count[index] <= 0) {
+			continue;
+		}
+
+		HidSixAxisSensorState states[16] = {};
+		int count = hidGetSixAxisSensorStates(sixaxis_handles[index][0], states, 16);
+		if (count > 0) {
+			const HidSixAxisSensorState &latest = states[count - 1];
+
+			// libnx: acceleration in G -> Godot: m/s^2 (* 9.80665)
+			Vector3 accel(
+			    latest.acceleration.x * 9.80665f,
+			    latest.acceleration.y * 9.80665f,
+			    latest.acceleration.z * 9.80665f);
+			input->set_accelerometer(accel);
+
+			// libnx: angular_velocity in rev/s -> Godot: rad/s (* Math::TAU)
+			Vector3 gyro(
+			    latest.angular_velocity.x * Math::TAU,
+			    latest.angular_velocity.y * Math::TAU,
+			    latest.angular_velocity.z * Math::TAU);
+			input->set_gyroscope(gyro);
+		}
+
+		break;
+	}
+}
+
+void JoypadSwitch::reset_sixaxis() {
+	for (int index = 0; index < JOYPADS_MAX; index++) {
+		_stop_sixaxis(index);
+	}
+
+	if (input) {
+		input->set_accelerometer(Vector3());
+		input->set_gyroscope(Vector3());
+	}
+}
+
 JoypadSwitch::JoypadSwitch() {
 	// Does nothing.
 }
@@ -241,6 +330,7 @@ JoypadSwitch::~JoypadSwitch() {
 
 	for (int i = 0; i < JOYPADS_MAX; i++) {
 		_stop_vibration(i);
+		_stop_sixaxis(i);
 
 		if (connected[i]) {
 			input->joy_connection_changed(i, false, "");

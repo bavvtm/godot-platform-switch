@@ -32,8 +32,9 @@ void JoypadSwitch::_init_pad() {
 }
 
 void JoypadSwitch::_init_vibration(int p_index) {
-	u32 pad_id = padIsHandheld(&pads[p_index]) ? HidNpadIdType_Handheld : (HidNpadIdType_No1 + p_index);
-	u32 pad_style = padGetStyleSet(&pads[p_index]);
+	bool is_handheld = padIsHandheld(&pads[p_index]);
+	u32 pad_id = is_handheld ? HidNpadIdType_Handheld : (HidNpadIdType_No1 + p_index);
+	u32 pad_style = is_handheld ? (u32)HidNpadStyleTag_NpadHandheld : padGetStyleSet(&pads[p_index]);
 
 	if (active_pad_id[p_index] == pad_id && active_pad_style[p_index] == pad_style && vibration_handle_count[p_index] > 0) {
 		return;
@@ -74,8 +75,9 @@ void JoypadSwitch::_send_vibration(int p_index, float p_low, float p_high) {
 }
 
 void JoypadSwitch::_init_sixaxis(int p_index) {
-	u32 pad_id = padIsHandheld(&pads[p_index]) ? HidNpadIdType_Handheld : (HidNpadIdType_No1 + p_index);
-	u32 pad_style = padGetStyleSet(&pads[p_index]);
+	bool is_handheld = padIsHandheld(&pads[p_index]);
+	u32 pad_id = is_handheld ? HidNpadIdType_Handheld : (HidNpadIdType_No1 + p_index);
+	u32 pad_style = is_handheld ? (u32)HidNpadStyleTag_NpadHandheld : padGetStyleSet(&pads[p_index]);
 
 	if (sixaxis_pad_id[p_index] == pad_id && sixaxis_pad_style[p_index] == pad_style && sixaxis_handle_count[p_index] > 0) {
 		return;
@@ -86,7 +88,7 @@ void JoypadSwitch::_init_sixaxis(int p_index) {
 	sixaxis_pad_id[p_index] = pad_id;
 	sixaxis_pad_style[p_index] = pad_style;
 
-	int expected_count = (pad_style & HidNpadStyleTag_NpadJoyDual) ? 2 : 1;
+	int expected_count = (!is_handheld && (pad_style & HidNpadStyleTag_NpadJoyDual)) ? 2 : 1;
 	Result rc = hidGetSixAxisSensorHandles(sixaxis_handles[p_index], expected_count, (HidNpadIdType)pad_id, (HidNpadStyleTag)pad_style);
 	if (R_SUCCEEDED(rc)) {
 		sixaxis_handle_count[p_index] = expected_count;

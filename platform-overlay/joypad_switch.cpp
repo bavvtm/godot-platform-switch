@@ -1,6 +1,7 @@
 #include "joypad_switch.h"
 
 #include "core/math/math_defs.h"
+#include "core/os/os.h"
 
 static constexpr u64 pad_ids[JOYPADS_MAX] = {
 	(1ull << HidNpadIdType_No1) | (1ull << HidNpadIdType_Handheld),
@@ -257,6 +258,17 @@ void JoypadSwitch::process_vibration() {
 		}
 
 		uint64_t timestamp = input->get_joy_vibration_timestamp(index);
+		float duration = input->get_joy_vibration_duration(index);
+
+		if (duration > 0.0f) {
+			uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
+			if (now_usec >= timestamp && (now_usec - timestamp) >= (uint64_t)(duration * 1000000.0)) {
+				input->stop_joy_vibration(index);
+				_stop_vibration(index);
+				continue;
+			}
+		}
+
 		if (timestamp != last_vibration_timestamp[index] || !is_vibrating[index]) {
 			last_vibration_timestamp[index] = timestamp;
 			is_vibrating[index] = true;

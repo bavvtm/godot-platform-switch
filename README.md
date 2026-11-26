@@ -9,16 +9,24 @@ This repository contains a *Godot 4* platform targeting the Nintendo Switch arch
 
 ## What's Working
 
-Only core features are implemented and tested so far:
+Core features implemented and verified on hardware:
 
 - ✅ **Vulkan Renderer (`Mobile` & `Forward+`)** — Powered by Mesa NVK (`mesa-switch`) with working persistent `shader_cache` on microSD.
 - ✅ **OpenGL ES 3 Renderer (`Compatibility`)** — Works out of the box.
+- ✅ **Docked / Handheld Resolution & DPI** — Automatic switching between `720p` (Handheld) and `1080p` (Docked) with model-aware DPI scaling.
 - ✅ **Audio (`audren`)** — Background music and sound effects play properly.
 - ✅ **Joypad / Controller (`hid`)** — Joy-Con and Pro Controller inputs work natively.
+- ✅ **HD Rumble / Vibration (`hid`)** — Joy-Con vibration works natively with timed duration support.
+- ✅ **Motion Sensors (`SixAxis`)** — Built-in gyroscope and accelerometer (`Input.get_gyroscope()` / `Input.get_accelerometer()`) work natively.
 - ✅ **Touchscreen** — Handheld touch input is supported.
+- ✅ **Virtual Keyboard (`SwkbdInline` + `SwitchAPI`)** — Supports both non-blocking inline keyboard (`SwkbdInline`) for standard Godot `LineEdit`/`TextEdit` nodes and blocking modal dialogs via `SwitchAPI`.
 - ✅ **Networking & TLS (`mbedtls` + `csrng`)** — Hardware entropy (`csrng`), `Crypto`, HTTPS requests (`HTTPRequest`), and DTLS over UDP are tested and working.
-- 🧪 **Virtual Keyboard (`swkbd`)** — Implemented in codebase, but **untested** yet.
 - 🧪 **Other Built-in Third-Party Modules** — Included in the build, though not all modules have been individually tested yet.
+
+## Hardware Testing Notes
+
+- **Primary Test Unit:** Developed and tested mainly on a **Nintendo Switch Lite** (`HARDWARE_HOAG`).
+- **Docked Mode, OLED DPI & HD Rumble:** Dynamic `720p` ↔ `1080p` resolution switching, OLED DPI scaling (`210 DPI` handheld / `96 DPI` docked), and HD Rumble vibration were tested and verified using a borrowed **Nintendo Switch OLED** (since I only own a Switch Lite, future testing for docked/OLED-specific regressions depends on whether I can borrow it again).
 
 ## Known Quirks & Limitations
 

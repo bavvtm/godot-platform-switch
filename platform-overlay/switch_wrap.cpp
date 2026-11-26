@@ -2,12 +2,30 @@
 
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#define F_OK 0
+#define access _access
+#else
+#include <unistd.h>
+#endif
+
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
 namespace nx {
+
+uint64_t millis() {
+#ifdef __SWITCH__
+	return armTicksToNs(armGetSystemTick()) / 1000000ULL;
+#else
+	using namespace std::chrono;
+	return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+#endif
+}
 
 static bool _has_arg(char *const *p_args, int p_count, const char *p_target) {
 	for (int i = 0; i < p_count; i++) {
@@ -22,6 +40,7 @@ static bool _has_arg(char *const *p_args, int p_count, const char *p_target) {
 FILE *s_log_file = nullptr;
 
 static int _log_write_cb(void *, const char *p_buf, size_t p_len) {
+#ifdef __SWITCH__
 	static bool line_start = true;
 	static uint64_t t0 = nx::millis();
 
@@ -41,6 +60,19 @@ static int _log_write_cb(void *, const char *p_buf, size_t p_len) {
 	}
 
 	return (int)p_len;
+#else
+	(void)p_buf;
+	(void)p_len;
+	return 0;
+#endif
+}
+
+static void _make_dir(const char *p_path) {
+#ifdef _WIN32
+	_mkdir(p_path);
+#else
+	mkdir(p_path, 0777);
+#endif
 }
 
 void ensure_dir(const char *p_path) {
@@ -54,12 +86,12 @@ void ensure_dir(const char *p_path) {
 		if (*p == '/') {
 			*p = '\0';
 			if (p[-1] != ':') {
-				mkdir(tmp, 0777);
+				_make_dir(tmp);
 			}
 			*p = '/';
 		}
 	}
-	mkdir(tmp, 0777);
+	_make_dir(tmp);
 }
 
 void get_app_dir_from_argv(const char *p_argv0, char *r_dir, size_t p_len) {
@@ -86,6 +118,7 @@ void get_app_dir_from_argv(const char *p_argv0, char *r_dir, size_t p_len) {
 }
 
 void init_file_logging_from_argv(const char *p_argv0) {
+#ifdef __SWITCH__
 	char app_dir[512];
 	get_app_dir_from_argv(p_argv0, app_dir, sizeof(app_dir));
 
@@ -104,6 +137,9 @@ void init_file_logging_from_argv(const char *p_argv0) {
 			setvbuf(stderr, nullptr, _IONBF, 0);
 		}
 	}
+#else
+	(void)p_argv0;
+#endif
 }
 
 static void _parse_args_file(const char *p_file_path, char ***r_list, int *r_count) {
@@ -216,8 +252,9 @@ int build_setup_args(int argc, char *argv[], char ***r_out_argv) {
 	return total;
 }
 
-u32 hardware_type() {
-	static u32 cached_type = 0xFFFFFFFF;
+uint32_t hardware_type() {
+#ifdef __SWITCH__
+	static uint32_t cached_type = 0xFFFFFFFF;
 	if (cached_type != 0xFFFFFFFF) {
 		return cached_type;
 	}
@@ -234,8 +271,11 @@ u32 hardware_type() {
 		return 0xFFFFFFFF;
 	}
 
-	cached_type = static_cast<u32>(type);
+	cached_type = static_cast<uint32_t>(type);
 	return cached_type;
+#else
+	return 0xFFFFFFFF;
+#endif
 }
 
 bool firmware_version(char *r_buf, size_t p_len) {
@@ -243,6 +283,7 @@ bool firmware_version(char *r_buf, size_t p_len) {
 		return false;
 	}
 
+#ifdef __SWITCH__
 	if (R_FAILED(setsysInitialize())) {
 		return false;
 	}
@@ -258,6 +299,10 @@ bool firmware_version(char *r_buf, size_t p_len) {
 	strncpy(r_buf, fw.display_version, p_len - 1);
 	r_buf[p_len - 1] = '\0';
 	return true;
+#else
+	r_buf[0] = '\0';
+	return false;
+#endif
 }
 
 bool is_oled_model() {
@@ -266,6 +311,179 @@ bool is_oled_model() {
 
 bool is_lite_model() {
 	return hardware_type() == HARDWARE_HOAG;
+}
+
+bool is_docked() {
+#ifdef __SWITCH__
+	return appletGetOperationMode() == AppletOperationMode_Console;
+#else
+	return false;
+#endif
+}
+
+#ifdef __SWITCH__
+static SwkbdInline s_kbd_inline;
+static bool s_kbd_inline_created = false;
+static bool s_kbd_inline_initialized = false;
+static bool s_kbd_inline_visible = false;
+static bool s_kbd_inline_pending_appear = false;
+static SwkbdAppearArg s_kbd_pending_arg;
+static char s_kbd_pending_text[512] = {};
+static InlineKeyboardCb s_kbd_inline_cb = nullptr;
+
+static void _on_inline_finished_init(void) {
+	s_kbd_inline_initialized = true;
+}
+
+static void _on_inline_changed(const char *str, SwkbdChangedStringArg *arg) {
+	(void)arg;
+	if (s_kbd_inline_cb && str) {
+		s_kbd_inline_cb(str, false, false);
+	}
+}
+
+static void _on_inline_submit(const char *str, SwkbdDecidedEnterArg *arg) {
+	(void)arg;
+	s_kbd_inline_visible = false;
+	if (s_kbd_inline_cb && str) {
+		s_kbd_inline_cb(str, true, false);
+	}
+}
+
+static void _on_inline_cancel(void) {
+	s_kbd_inline_visible = false;
+	if (s_kbd_inline_cb) {
+		s_kbd_inline_cb(nullptr, false, true);
+	}
+}
+#endif
+
+bool init_inline_keyboard(InlineKeyboardCb p_callback) {
+#ifdef __SWITCH__
+	if (s_kbd_inline_created) {
+		return true;
+	}
+	s_kbd_inline_cb = p_callback;
+	s_kbd_inline_initialized = false;
+
+	Result rc = swkbdInlineCreate(&s_kbd_inline);
+	if (R_FAILED(rc)) {
+		TRACE("swkbdInlineCreate failed: 0x%x", rc);
+		return false;
+	}
+
+	swkbdInlineSetUtf8Mode(&s_kbd_inline, true); // godot need utf8
+	swkbdInlineSetFinishedInitializeCallback(&s_kbd_inline, _on_inline_finished_init);
+
+	rc = swkbdInlineLaunchForLibraryApplet(&s_kbd_inline, SwkbdInlineMode_AppletDisplay, 0);
+	if (R_FAILED(rc)) {
+		TRACE("swkbdInlineLaunchForLibraryApplet failed: 0x%x", rc);
+		swkbdInlineClose(&s_kbd_inline);
+		return false;
+	}
+
+	swkbdInlineSetChangedStringCallback(&s_kbd_inline, _on_inline_changed);
+	swkbdInlineSetDecidedEnterCallback(&s_kbd_inline, _on_inline_submit);
+	swkbdInlineSetDecidedCancelCallback(&s_kbd_inline, _on_inline_cancel);
+
+	s_kbd_inline_created = true;
+	return true;
+#else
+	(void)p_callback;
+	return false;
+#endif
+}
+
+void shutdown_inline_keyboard() {
+#ifdef __SWITCH__
+	if (s_kbd_inline_created) {
+		swkbdInlineClose(&s_kbd_inline);
+		s_kbd_inline_created = false;
+		s_kbd_inline_initialized = false;
+		s_kbd_inline_visible = false;
+		s_kbd_inline_pending_appear = false;
+	}
+#endif
+}
+
+static void _do_inline_appear(const SwkbdAppearArg &p_arg) {
+#ifdef __SWITCH__
+	swkbdInlineAppear(&s_kbd_inline, &p_arg);
+	if (strlen(s_kbd_pending_text) > 0) {
+		swkbdInlineSetInputText(&s_kbd_inline, s_kbd_pending_text);
+		swkbdInlineSetCursorPos(&s_kbd_inline, (s32)strlen(s_kbd_pending_text));
+	}
+	
+	swkbdInlineUpdate(&s_kbd_inline, nullptr);
+	s_kbd_inline_visible = true;
+#else
+	(void)p_arg;
+#endif
+}
+
+void show_inline_keyboard(const char *p_initial_text, uint32_t p_max_length, KeyboardPreset p_preset) {
+#ifdef __SWITCH__
+	if (!s_kbd_inline_created) {
+		return;
+	}
+
+	SwkbdAppearArg arg;
+	swkbdInlineMakeAppearArg(&arg, SwkbdType_Normal);
+
+	if (p_preset == KEYBOARD_PRESET_PASSWORD) {
+		arg.type = SwkbdType_Normal;
+		arg.dicFlag = 0;
+		arg.keySetDisableBitmask = SwkbdKeyDisableBitmask_UserName;
+	} else if (p_preset == KEYBOARD_PRESET_NUMPAD) {
+		arg.type = SwkbdType_NumPad;
+	}
+
+	arg.stringLenMax = (p_max_length > 0 && p_max_length <= 500) ? p_max_length : 500;
+
+	if (p_initial_text && strlen(p_initial_text) > 0) {
+		snprintf(s_kbd_pending_text, sizeof(s_kbd_pending_text), "%s", p_initial_text);
+	} else {
+		memset(s_kbd_pending_text, 0, sizeof(s_kbd_pending_text));
+	}
+
+	if (s_kbd_inline_initialized) {
+		_do_inline_appear(arg);
+		s_kbd_inline_pending_appear = false;
+	} else {
+		s_kbd_pending_arg = arg;
+		s_kbd_inline_pending_appear = true;
+	}
+#else
+	(void)p_initial_text;
+	(void)p_max_length;
+	(void)p_preset;
+#endif
+}
+
+void hide_inline_keyboard() {
+#ifdef __SWITCH__
+	s_kbd_inline_pending_appear = false;
+	if (s_kbd_inline_created && s_kbd_inline_visible) {
+		swkbdInlineDisappear(&s_kbd_inline);
+		swkbdInlineUpdate(&s_kbd_inline, nullptr);
+		s_kbd_inline_visible = false;
+	}
+#endif
+}
+
+void update_inline_keyboard() {
+#ifdef __SWITCH__
+	if (!s_kbd_inline_created) {
+		return;
+	}
+
+	swkbdInlineUpdate(&s_kbd_inline, nullptr);
+
+	if (s_kbd_inline_pending_appear && s_kbd_inline_initialized) {
+		s_kbd_inline_pending_appear = false;
+		_do_inline_appear(s_kbd_pending_arg);
+	}
+#endif
 }
 
 } // namespace nx

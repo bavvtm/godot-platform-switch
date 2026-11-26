@@ -37,18 +37,12 @@ String DisplayServerSwitch::get_name() const {
 }
 
 void DisplayServerSwitch::_check_operation_mode() {
-	AppletOperationMode op_mode = appletGetOperationMode();
-	if ((int)op_mode != current_op_mode) {
-		current_op_mode = (int)op_mode;
+	int op_mode = nx::is_docked() ? 1 : 0;
+	if (op_mode != current_op_mode) {
+		current_op_mode = op_mode;
 
 		// 0: Handheld (720p), 1: Console / Docked (1080p)
-		Size2i new_size;
-		if (op_mode == AppletOperationMode_Console) {
-			new_size = Size2i(1920, 1080);
-		} else {
-			new_size = Size2i(1280, 720);
-		}
-
+		Size2i new_size = (op_mode == 1) ? Size2i(1920, 1080) : Size2i(1280, 720);
 		window_set_size(new_size, DisplayServerEnums::MAIN_WINDOW_ID);
 	}
 }
@@ -79,6 +73,36 @@ void DisplayServerSwitch::dispatch_window_event(DisplayServerEnums::WindowEvent 
 	}
 }
 
+static Ref<InputEventScreenTouch> _make_touch_event(int p_index, const Vector2 &p_pos, bool p_pressed) {
+	Ref<InputEventScreenTouch> ev;
+	ev.instantiate();
+	ev->set_index(p_index);
+	ev->set_position(p_pos);
+	ev->set_pressed(p_pressed);
+	return ev;
+}
+
+static Ref<InputEventScreenDrag> _make_drag_event(int p_index, const Vector2 &p_pos, const Vector2 &p_rel) {
+	Ref<InputEventScreenDrag> ev;
+	ev.instantiate();
+	ev->set_index(p_index);
+	ev->set_position(p_pos);
+	ev->set_relative(p_rel);
+	ev->set_relative_screen_position(p_rel);
+	return ev;
+}
+
+static Ref<InputEventKey> _make_key_event(Key p_keycode, char32_t p_unicode, bool p_ctrl, bool p_pressed) {
+	Ref<InputEventKey> ev;
+	ev.instantiate();
+	ev->set_keycode(p_keycode);
+	ev->set_physical_keycode(p_keycode);
+	ev->set_unicode(p_unicode);
+	ev->set_ctrl_pressed(p_ctrl);
+	ev->set_pressed(p_pressed);
+	return ev;
+}
+
 void DisplayServerSwitch::process_events() {
 	HidTouchScreenState state = {};
 	if (hidGetTouchScreenStates(&state, 1)) {
@@ -101,43 +125,27 @@ void DisplayServerSwitch::process_events() {
 			if (!touch_points[t.finger_id].active) {
 				touch_points[t.finger_id].active = true;
 				touch_points[t.finger_id].pos = pos;
-
-				Ref<InputEventScreenTouch> ev;
-				ev.instantiate();
-				ev->set_index(t.finger_id);
-				ev->set_position(pos);
-				ev->set_pressed(true);
-				Input::get_singleton()->parse_input_event(ev);
+				Input::get_singleton()->parse_input_event(_make_touch_event(t.finger_id, pos, true));
 			} else if (touch_points[t.finger_id].pos != pos) {
 				Vector2 rel = pos - touch_points[t.finger_id].pos;
 				touch_points[t.finger_id].pos = pos;
-
-				Ref<InputEventScreenDrag> ev;
-				ev.instantiate();
-				ev->set_index(t.finger_id);
-				ev->set_position(pos);
-				ev->set_relative(rel);
-				Input::get_singleton()->parse_input_event(ev);
+				Input::get_singleton()->parse_input_event(_make_drag_event(t.finger_id, pos, rel));
 			}
 		}
 
 		for (u32 id = 0; id < nx::MAX_TOUCH_POINTS; id++) {
 			if (touch_points[id].active && !current_active[id]) {
 				touch_points[id].active = false;
-
-				Ref<InputEventScreenTouch> ev;
-				ev.instantiate();
-				ev->set_index(id);
-				ev->set_position(touch_points[id].pos);
-				ev->set_pressed(false);
-				Input::get_singleton()->parse_input_event(ev);
+				Input::get_singleton()->parse_input_event(_make_touch_event(id, touch_points[id].pos, false));
 			}
 		}
 	}
 
 	Input::get_singleton()->flush_buffered_events();
 
-	_process_virtual_keyboard();
+	nx::update_inline_keyboard();
+	_process_inline_keyboard();
+
 	_check_operation_mode();
 }
 
@@ -149,60 +157,95 @@ BitField<MouseButtonMask> DisplayServerSwitch::mouse_get_button_state() const {
 	return touch_points[0].active ? MouseButtonMask::LEFT : MouseButtonMask::NONE;
 }
 
-void DisplayServerSwitch::_process_virtual_keyboard() {
-	if (has_pending_keyboard_text) {
-		has_pending_keyboard_text = false;
-		if (main_window.input_text_callback.is_valid()) {
-			main_window.input_text_callback.call(pending_keyboard_text);
+void DisplayServerSwitch::_on_inline_keyboard_event(const char *p_text, bool p_submitted, bool p_canceled) {
+	DisplayServerSwitch *ds = DisplayServerSwitch::get_singleton();
+	if (!ds) {
+		return;
+	}
+
+	MutexLock lock(ds->inline_kbd_mutex);
+	if (p_text) {
+		ds->inline_pending_text = String::utf8(p_text);
+		ds->inline_has_pending_text = true;
+	}
+
+	if (p_submitted || p_canceled) {
+		ds->inline_pending_submit = true;
+	}
+}
+
+void DisplayServerSwitch::_process_inline_keyboard() {
+	String text_to_apply;
+	bool has_text = false;
+
+	{
+		MutexLock lock(inline_kbd_mutex);
+		if (inline_has_pending_text) {
+			text_to_apply = inline_pending_text;
+			has_text = true;
+			inline_has_pending_text = false;
 		}
-		pending_keyboard_text = String();
+	}
+
+	if (!has_text || text_to_apply == inline_last_text) {
 		return;
 	}
 
-	if (!keyboard_requested) {
+	inline_last_text = text_to_apply;
+
+	Input *input = Input::get_singleton();
+	input->parse_input_event(_make_key_event(Key::A, 'a', true, true));
+	input->parse_input_event(_make_key_event(Key::A, 'a', true, false));
+
+	if (text_to_apply.is_empty()) {
+		input->parse_input_event(_make_key_event(Key::BACKSPACE, 0, false, true));
+		input->parse_input_event(_make_key_event(Key::BACKSPACE, 0, false, false));
 		return;
 	}
 
-	if (keyboard_wait_frames > 0) {
-		keyboard_wait_frames--;
-		return;
-	}
-
-	keyboard_requested = false;
-
-	SwkbdConfig kbd;
-	Result rc = swkbdCreate(&kbd, 0);
-	if (R_FAILED(rc)) {
-		ERR_PRINT(vformat("Switch Swkbd: swkbdCreate failed (0x%x)", rc));
-		return;
-	}
-
-	swkbdConfigMakePresetDefault(&kbd);
-	swkbdConfigSetStringLenMax(&kbd, (u32)keyboard_max_length);
-
-	if (!keyboard_existing_text.is_empty()) {
-		swkbdConfigSetInitialText(&kbd, keyboard_existing_text.utf8().get_data());
-	}
-
-	char out_text[2048] = {};
-	rc = swkbdShow(&kbd, out_text, sizeof(out_text));
-	swkbdClose(&kbd);
-
-	if (R_SUCCEEDED(rc)) {
-		pending_keyboard_text = String::utf8(out_text);
-		has_pending_keyboard_text = true;
+	for (int i = 0; i < text_to_apply.length(); i++) {
+		char32_t c = text_to_apply[i];
+		input->parse_input_event(_make_key_event(Key::NONE, c, false, true));
+		input->parse_input_event(_make_key_event(Key::NONE, c, false, false));
 	}
 }
 
 void DisplayServerSwitch::virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, DisplayServerEnums::VirtualKeyboardType p_type, int p_max_length, int p_cursor_start, int p_cursor_end) {
-	keyboard_requested = true;
-	keyboard_wait_frames = KEYBOARD_DELAY_FRAMES;
-	keyboard_existing_text = p_existing_text;
-	keyboard_max_length = (p_max_length > 0 && p_max_length <= 500) ? p_max_length : 500;
+	(void)p_screen_rect;
+	(void)p_cursor_start;
+	(void)p_cursor_end;
+
+	{
+		MutexLock lock(inline_kbd_mutex);
+		inline_last_text = p_existing_text;
+		inline_has_pending_text = false;
+		inline_pending_submit = false;
+	}
+
+	uint32_t max_len = (p_max_length > 0 && p_max_length <= 500) ? (uint32_t)p_max_length : 500;
+
+	nx::KeyboardPreset preset = nx::KEYBOARD_PRESET_DEFAULT;
+	switch (p_type) {
+		case DisplayServerEnums::KEYBOARD_TYPE_PASSWORD:
+			preset = nx::KEYBOARD_PRESET_PASSWORD;
+			break;
+		case DisplayServerEnums::KEYBOARD_TYPE_NUMBER:
+		case DisplayServerEnums::KEYBOARD_TYPE_NUMBER_DECIMAL:
+		case DisplayServerEnums::KEYBOARD_TYPE_PHONE:
+			preset = nx::KEYBOARD_PRESET_NUMPAD;
+			break;
+		default:
+			preset = nx::KEYBOARD_PRESET_DEFAULT;
+			break;
+	}
+
+	CharString utf8_text = p_existing_text.utf8();
+	const char *init_cstr = utf8_text.is_empty() ? "" : utf8_text.get_data();
+	nx::show_inline_keyboard(init_cstr, max_len, preset);
 }
 
 void DisplayServerSwitch::virtual_keyboard_hide() {
-	keyboard_requested = false;
+	nx::hide_inline_keyboard();
 }
 
 DisplayServer *DisplayServerSwitch::create_func(
@@ -270,7 +313,7 @@ Size2i DisplayServerSwitch::screen_get_size(int p_screen) const {
 
 int DisplayServerSwitch::screen_get_dpi(int p_screen) const {
 	(void)p_screen;
-	if (current_op_mode == AppletOperationMode_Console) {
+	if (nx::is_docked()) {
 		return 96; // TV or Monitor
 	}
 
@@ -389,9 +432,9 @@ DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, Displ
 
 	main_window.nx_window = native_window;
 
-	AppletOperationMode op_mode = appletGetOperationMode();
-	current_op_mode = (int)op_mode;
-	if (op_mode == AppletOperationMode_Console) {
+	bool docked = nx::is_docked();
+	current_op_mode = docked ? 1 : 0;
+	if (docked) {
 		nwindowSetDimensions(native_window, 1920, 1080);
 		main_window.size = Point2i(1920, 1080);
 	} else {
@@ -491,6 +534,8 @@ DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, Displ
 
 	Input::get_singleton()->set_event_dispatch_function(_dispatch_input_events);
 
+	nx::init_inline_keyboard(_on_inline_keyboard_event);
+
 	r_error = OK;
 }
 
@@ -530,4 +575,6 @@ DisplayServerSwitch::~DisplayServerSwitch() {
 		gl_manager = nullptr;
 	}
 #endif
+
+	nx::shutdown_inline_keyboard();
 }

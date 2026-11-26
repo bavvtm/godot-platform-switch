@@ -4,6 +4,7 @@
 
 #include "core/input/input_event.h"
 #include "core/math/vector2i.h"
+#include "core/os/mutex.h"
 #include "core/templates/hash_map.h"
 #include "servers/display/display_server.h"
 #include "servers/display/display_server_enums.h"
@@ -48,16 +49,11 @@ private:
 	TouchPoint touch_points[nx::MAX_TOUCH_POINTS];
 	Point2i last_mouse_position = Point2i(0, 0);
 
-	// delay opening the system keyboard by a few frames so the UI renders first,
-	// preventing the blocking swkbd applet from appearing over a black screen.
-	static constexpr int KEYBOARD_DELAY_FRAMES = 45;
-	bool keyboard_requested = false;
-	int keyboard_wait_frames = 0;
-	String keyboard_existing_text;
-	int keyboard_max_length = 500;
-
-	String pending_keyboard_text;
-	bool has_pending_keyboard_text = false;
+	Mutex inline_kbd_mutex;
+	String inline_last_text;
+	String inline_pending_text;
+	bool inline_has_pending_text = false;
+	bool inline_pending_submit = false;
 
 #ifdef RD_ENABLED
 	RenderingContextDriver *rendering_context = nullptr;
@@ -83,8 +79,9 @@ private:
 	static Vector<String> get_rendering_drivers_func();
 
 	static void _dispatch_input_events(const Ref<InputEvent> &p_event);
+	static void _on_inline_keyboard_event(const char *p_text, bool p_submitted, bool p_canceled);
 
-	void _process_virtual_keyboard();
+	void _process_inline_keyboard();
 	void _check_operation_mode();
 
 public:

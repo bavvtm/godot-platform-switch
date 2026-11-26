@@ -309,6 +309,7 @@ void JoypadSwitch::process_sixaxis() {
 			    latest.acceleration.y * 9.80665f,
 			    latest.acceleration.z * 9.80665f);
 			input->set_accelerometer(accel);
+			input->set_gravity(accel);
 
 			// libnx: angular_velocity in rev/s -> Godot: rad/s (* Math::TAU)
 			Vector3 gyro(
@@ -329,6 +330,7 @@ void JoypadSwitch::reset_sixaxis() {
 
 	if (input) {
 		input->set_accelerometer(Vector3());
+		input->set_gravity(Vector3());
 		input->set_gyroscope(Vector3());
 	}
 }
